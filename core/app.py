@@ -187,6 +187,9 @@ class PersonalFinancialWallet:
 
         :return: None
         """
+        db_dirname = os.path.dirname(self.db_path)
+        if not os.path.isdir(db_dirname):
+            os.mkdir(db_dirname)
         if not os.path.isfile(self.db_path):
             wb = op.Workbook()
             sheet = wb.active
