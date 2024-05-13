@@ -73,7 +73,7 @@ class PersonalFinancialWallet:
         )
         self.parser.add_argument('-a', '--amount', dest='amount', help='Сумма')
         self.parser.add_argument('--date', nargs='?', dest='date', help='Дата операции', const=datetime.date)
-        self.parser.add_argument('-d', '--desc', nargs='?', dest='description', help='Дата операции')
+        self.parser.add_argument('-d', '--desc', nargs='?', dest='description', help='Детали операции')
         self.parser.add_argument('-i', '--index', nargs='?', type=int, dest='idx', help='Индекс записи')
 
     def display_balance(self, dataframe: pd.DataFrame) -> None:
