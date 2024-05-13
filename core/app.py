@@ -72,8 +72,7 @@ class PersonalFinancialWallet:
             '-c', '--cat', nargs='?', choices=self.categories, dest='category', help='Категория операции'
         )
         self.parser.add_argument('-a', '--amount', dest='amount', help='Сумма')
-        self.parser.add_argument('--date', nargs='?', dest='date', help='Дата операции', const=datetime.date,
-                                 default=datetime.now().date())
+        self.parser.add_argument('--date', nargs='?', dest='date', help='Дата операции', const=datetime.date)
         self.parser.add_argument('-d', '--desc', nargs='?', dest='description', help='Дата операции')
         self.parser.add_argument('-i', '--index', nargs='?', type=int, dest='idx', help='Индекс записи')
 
@@ -106,13 +105,9 @@ class PersonalFinancialWallet:
         """
         income_rows = self._filter_rows(dataframe, {'Category': 'Доход'})
         outcome_rows = self._filter_rows(dataframe, {'Category': 'Расход'})
-        income, outcome = 0, 0
-        if income_rows.empty:
-            balance, outcome = outcome, outcome_rows.Amount.sum()
-        elif outcome_rows.empty:
-            balance, income = income, income_rows.Amount.sum()
-        else:
-            balance = sub(income, outcome)
+        income = income_rows.Amount.sum() if not income_rows.empty else 0
+        outcome = outcome_rows.Amount.sum() if not outcome_rows.empty else 0
+        balance = sub(income, outcome)
         return balance, income, outcome
 
     def add_record(self, col_values: dict[str, Any]) -> None:
@@ -126,7 +121,8 @@ class PersonalFinancialWallet:
         upd_datetime = datetime.now()
         col_values.update({'Created at': upd_datetime})
         self._save_to_excel(col_values)
-        print(f'\nДобавлена новая запись:\n\n{col_values}')
+
+        print(f'\nДобавлена новая запись:\n\n{" | ".join(str(i) for i in col_values.values())}')
 
     def modify_record(self, update_values: dict[str, Any], index: int) -> None:
         """
@@ -138,7 +134,7 @@ class PersonalFinancialWallet:
         """
         update_values['Updated at'] = datetime.now()
         self._save_to_excel(update_values, index)
-        print(f'\nЗапись обновлена:\n{update_values}')
+        print(f'\nЗапись обновлена:\n{" | ".join(str(i) for i in update_values.values())}')
 
     def search_record(self, dataframe: pd.DataFrame, conditions: dict[str, str]) -> None:
         """
@@ -173,7 +169,7 @@ class PersonalFinancialWallet:
                 print('\nОшибка: Недостаточно данных для вычисления баланса.'
                       ' Отсутствуют доходы и расходы.')
                 raise SystemExit(2)
-            self.display_balance()
+            self.display_balance(dataframe)
         elif args.action == 'add':
             self.add_record(_col_values)
         elif args.action == 'search':
