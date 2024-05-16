@@ -1,6 +1,7 @@
 import os
 
 import argparse as ap
+
 from typing import Union, Any
 from operator import sub
 from datetime import datetime
@@ -47,14 +48,24 @@ class PersonalFinancialWallet:
         Приложение командной строки для ведения учета доходов и расходов
     '''
 
+    _balance_table = dedent('''
+            __________________________
+           | Текущий баланс: %d 
+           | ------------------------- 
+           | Доходы:         %d          
+           | ------------------------- 
+           | Расходы:       %d        
+           | _________________________ 
+        ''')
+
     _actions = ['balance', 'add', 'search', 'modify']
 
     _root_dir = os.getcwd()
 
     _filename = 'db.xlsx'
 
-    columns = ['Category', 'Amount', 'Date', 'Description', 'Created at', 'Updated at']
-    categories = ['Расход', 'Доход']
+    _columns = ['Category', 'Amount', 'Date', 'Description', 'Created at', 'Updated at']
+    _categories = ['Расход', 'Доход']
 
     def __init__(self):
         self.db_path = os.path.join(self._root_dir, f'database\\{self._filename}')
@@ -69,40 +80,24 @@ class PersonalFinancialWallet:
                                  help='Выполнить операцию одну на выбор - показать баланс,'
                                       ' добавить редактировать или удалить запись')
         self.parser.add_argument(
-            '-c', '--cat', nargs='?', choices=self.categories, dest='category', help='Категория операции'
+            '-c', '--cat', nargs='?', choices=self._categories, dest='category', help='Категория операции'
         )
         self.parser.add_argument('-a', '--amount', dest='amount', help='Сумма')
         self.parser.add_argument('--date', nargs='?', dest='date', help='Дата операции', const=datetime.date)
         self.parser.add_argument('-d', '--desc', nargs='?', dest='description', help='Детали операции')
         self.parser.add_argument('-i', '--index', nargs='?', type=int, dest='idx', help='Индекс записи')
 
-    def display_balance(self, dataframe: pd.DataFrame) -> None:
-        """
-        Выводит в консоль информацию о балансе, расходы и доходы.
-
-        :param dataframe: датафрейм с информацией о расходах и доходах
-        :return: None
-        """
-        balance, income, outcome = self.count_balance(dataframe)
-        if outcome > income:
-            print(dedent(f'\n\nБюджет перерасходован!'))
-        print(dedent(f'''
-            __________________________
-           | Текущий баланс: {balance:.2f} 
-           | ------------------------- 
-           | Доходы:         {income:.2f}          
-           | ------------------------- 
-           | Расходы:       {outcome:.2f}        
-           | _________________________ 
-        '''))
-
     def count_balance(self, dataframe: pd.DataFrame) -> tuple[int, int, int]:
         """
         Вычисляет баланс, расходы и доходы.
 
-        :param dataframe: датафрейм с информацией о расходах и доходах
+        :param dataframe: дата фрейм с информацией о расходах и доходах
         :return: Кортеж с суммой баланса, общей суммой расходов и доходов
         """
+        if dataframe.empty:
+            print('\nОшибка: Недостаточно данных для вычисления баланса.'
+                  ' Отсутствуют доходы и расходы.')
+            raise SystemExit(2)
         income_rows = self._filter_rows(dataframe, {'Category': 'Доход'})
         outcome_rows = self._filter_rows(dataframe, {'Category': 'Расход'})
         income = income_rows.Amount.sum() if not income_rows.empty else 0
@@ -122,8 +117,6 @@ class PersonalFinancialWallet:
         col_values.update({'Created at': upd_datetime})
         self._save_to_excel(col_values)
 
-        print(f'\nДобавлена новая запись:\n\n{" | ".join(str(i) for i in col_values.values())}')
-
     def modify_record(self, update_values: dict[str, Any], index: int) -> None:
         """
         Обновляет запись в файле excel.
@@ -134,48 +127,47 @@ class PersonalFinancialWallet:
         """
         update_values['Updated at'] = datetime.now()
         self._save_to_excel(update_values, index)
-        print(f'\nЗапись обновлена:\n{" | ".join(str(i) for i in update_values.values())}')
 
-    def search_record(self, dataframe: pd.DataFrame, conditions: dict[str, str]) -> None:
+    def search_record(self, dataframe: pd.DataFrame, conditions: dict[str, str]) -> int:
         """
         Найти запись по значениям ячеек, переданных пользователем в аргументах
-        командной строки.
+        командной строки. Метод меняет дата фрейм "на месте" - т.е. фильтрует
+        переданный не создавая при этом новый, и возвращает количество
+        найденных строк.
 
         :param dataframe: датафрейм с информацией о расходах и доходах
         :param conditions: Словарь со значениями ячеек для поиска
-        :return: None
+        :return: Количество найденных строк
         """
         self._filter_rows(dataframe, conditions, inplace=True)
-        height, _ = dataframe.shape
-        print(f'\nНайдено {height} записей\n_________________\n')
-        if not dataframe.empty:
-            print(dataframe)
+        rows_count, _ = dataframe.shape
+        return rows_count
 
     def start(self) -> None:
         """
-        Запускает парсинг аргументов командной строки и вызывает
-        методы класса в зависимости от команды, переданной пользователем.
+        Запускает парсинг аргументов командной строки, вызывает
+        методы класса в зависимости от команды, переданной пользователем и
+        выводит информацию в sys.stdout.
 
         :return: None
         """
         args = self.parser.parse_args()
-        _col_values = {}
-        for attr in ('amount', 'category', 'date', 'description'):
-            if getattr(args, attr):
-                _col_values[attr.capitalize()] = getattr(args, attr)
+        _col_values = self.cli_args_to_dict(args)
         if args.action == 'balance':
             dataframe = self._load_dataframe_from_excel()
-            if dataframe.empty:
-                print('\nОшибка: Недостаточно данных для вычисления баланса.'
-                      ' Отсутствуют доходы и расходы.')
-                raise SystemExit(2)
-            self.display_balance(dataframe)
+            print(self._balance_table % self.count_balance(dataframe))
         elif args.action == 'add':
             self.add_record(_col_values)
+            print(f'\nДобавлена новая запись:\n\n{self.cell_values_to_string(_col_values.values())}')
         elif args.action == 'search':
-            self.search_record(self._load_dataframe_from_excel(), _col_values)
+            dataframe = self._load_dataframe_from_excel()
+            rows_count = self.search_record(dataframe, _col_values)
+            print(f'\nНайдено {rows_count} записей\n_________________\n')
+            if rows_count > 0:
+                print(dataframe)
         else:
             self.modify_record(_col_values, args.idx)
+            print(f'\nЗапись обновлена:\n{self.cell_values_to_string(_col_values.values())}')
 
     def _create_db_if_not_exists(self) -> None:
         """
@@ -183,22 +175,22 @@ class PersonalFinancialWallet:
 
         :return: None
         """
-        db_dirname = os.path.dirname(self.db_path)
-        if not os.path.isdir(db_dirname):
-            os.mkdir(db_dirname)
+        db_dir_name = os.path.dirname(self.db_path)
+        if not os.path.isdir(db_dir_name):
+            os.mkdir(db_dir_name)
         if not os.path.isfile(self.db_path):
             wb = op.Workbook()
             sheet = wb.active
             sheet.title = 'Main'
-            sheet.append(self.columns)
+            sheet.append(self._columns)
             wb.save(self.db_path)
 
     def _load_dataframe_from_excel(self) -> pd.DataFrame:
         """
-        Загружает датафрейм из файла excel в директории ./database/
+        Загружает дата фрейм из файла excel в директории ./database/
 
         :param path:
-        :return: Датафрейм с данными о расходах и доходах из файла excel
+        :return: Дата фрейм с данными о расходах и доходах из файла excel
         """
         return pd.read_excel(self.db_path, date_format='%Y-%m-%d', parse_dates=['Date'])
 
@@ -210,7 +202,7 @@ class PersonalFinancialWallet:
         :param index: Индекс записи (По умолчанию равен None)
         :return: None
         """
-        col_indexes = {i[1]: i[0] for i in enumerate(self.columns, 1)}
+        col_indexes = {i[1]: i[0] for i in enumerate(self._columns, 1)}
         workbook = op.load_workbook(self.db_path)
         sheet = workbook['Main']
         index = (sheet.max_row + 1) if index is None else (index + 2)
@@ -223,17 +215,38 @@ class PersonalFinancialWallet:
                      conditions: dict[str, str],
                      inplace: bool = False) -> Union[pd.DataFrame, None]:
         """
-        Фильтрует датафрейм на основе переданных значений
+        Фильтрует дата фрейм на основе переданных значений
 
-        :param dataframe: Датафрейм с данными о расходах и доходах из файла excel
+        :param dataframe: Дата фрейм с данными о расходах и доходах из файла excel
         :param conditions: Значения ячеек для фильтрации
-        :param inplace: Опциональный аргумент, определяет создавать ли новый объект датафрейм,
+        :param inplace: Опциональный аргумент, определяет создавать ли новый объект дата фрейм,
                         или менять существующий. По умолчанию равен False
-        :return: Отфильтрованный датафрейм или None, если записи не найдены
+        :return: Отфильтрованный дата фрейм или None, если записи не найдены
         """
         expr = ' & '.join([f'{item[0]} == "{item[1]}"' for item in conditions.items()])
         result = dataframe.query(expr, inplace=inplace)
         if not inplace:
             return result
 
+    @staticmethod
+    def cli_args_to_dict(args: ap.Namespace) -> dict[str, str]:
+        """
+        Создает словарь со значениями, переданными пользователем
+        в аргументах командной строки
 
+        :param args: Аргументы командной строки
+        """
+        result = {}
+        for attr in ('amount', 'category', 'date', 'description'):
+            if getattr(args, attr):
+                result[attr.capitalize()] = getattr(args, attr)
+        return result
+
+    @staticmethod
+    def cell_values_to_string(values: Any):
+        """
+        Преобразует значения в строковое представление
+
+        :param values: Итерируемый объект
+        """
+        return " | ".join(str(i) for i in values)
